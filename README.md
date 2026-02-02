@@ -19,11 +19,11 @@ flowchart TD
     end
 
     subgraph Core Logic
-        Watchman[("👮 Watchman\n(Regime Detector)")]
+        Watchman[("👮 Watchman")]
         Orchestrator{{"Main Orchestrator"}}
         
-        Strategy1["📉 Mean Reversion\n(Bollinger + RSI)"]
-        Strategy2["📈 Trend Sniper\n(Donchian + EMA)"]
+        Strategy1["📉 Mean Reversion"]
+        Strategy2["📈 Trend Sniper"]
     end
 
     subgraph Persistence
