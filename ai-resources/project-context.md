@@ -64,3 +64,35 @@ Timeframe: **1h**.
 
 ### 4. Entregable
 Genera el código completo para todos los archivos mencionados, asegurando que las clases de estrategia hereden correctamente, el manejo de base de datos sea seguro (thread-safe si es necesario) y el Dockerfile esté optimizado.
+
+### 5. Anexo: Mejoras Técnicas Obligatorias (Estabilidad y Logging)
+Para asegurar la robustez del sistema en producción, implementa las siguientes mejoras lógicas sobre la arquitectura base:
+
+#### 5.1. Implementación de Histéresis en el Watchman (Anti-Whipsaw)
+Para evitar cambios constantes de régimen cuando el ADX oscila alrededor del umbral (ej. 24.9 -> 25.1 -> 24.8), la lógica de transición debe tener memoria de estado (Histéresis):
+
+Definir dos umbrales: ADX_TREND_START = 25 y ADX_RANGE_RETURN = 20.
+
+Lógica de Cambio:
+
+Si el estado actual es RANGING: Solo cambiar a TRENDING si ADX > 25.
+
+Si el estado actual es TRENDING: Solo volver a RANGING si ADX < 20.
+
+Resultado: Se crea una zona "colchón" entre 20 y 25 donde el bot mantiene su decisión anterior, evitando el ruido.
+
+#### 5.2. Mecanismo de Cooldown post-cambio
+Al producirse un cambio de régimen (de Rango a Tendencia o viceversa), el Orquestador debe activar un COOLDOWN_TIMER de 15 minutos (o 1 vela del timeframe base).
+
+Durante este tiempo, no se permiten nuevas entradas.
+
+Objetivo: Permitir que la volatilidad del cambio se asiente y confirmar que el cambio de régimen es real antes de arriesgar capital.
+
+#### 5.3. Sistema de Logging Estructurado (Auditoría Forense)
+Sustituir los print básicos por el módulo logging de Python configurado para escribir tanto en consola como en un archivo rotativo bot_activity.log. El formato del log debe ser parseable y contener métricas clave en cada decisión crítica.
+
+Formato requerido: %(asctime)s - [REGIME: %(regime)s] - [STRATEGY: %(strategy)s] - %(levelname)s - %(message)s
+
+Ejemplo de Log Crítico (Entry): "SIGNAL GENERATED | Symbol: BTC/USDT | Side: LONG | Price: 95000 | Ind: RSI=28, BB_Low=95100 | Reason: Oversold Condition"
+
+Ejemplo de Log Crítico (Regime Switch): "REGIME CHANGE DETECTED | Old: RANGING | New: TRENDING | ADX Value: 26.5 | Action: Pausing Mean Reversion Strategy"
