@@ -123,6 +123,7 @@ class TradingConfig:
     max_drawdown: float
     loop_interval_seconds: int
     dry_run: bool
+    simulated_balance: float  # Starting balance for paper trading (0 = use real balance)
     
     @classmethod
     def from_env(cls) -> "TradingConfig":
@@ -133,6 +134,7 @@ class TradingConfig:
             max_drawdown=get_env_float("MAX_DRAWDOWN", 0.1),
             loop_interval_seconds=get_env_int("LOOP_INTERVAL_SECONDS", 60),
             dry_run=get_env_bool("DRY_RUN", True),
+            simulated_balance=get_env_float("SIMULATED_BALANCE", 0.0),
         )
 
 

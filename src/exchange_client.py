@@ -29,7 +29,10 @@ class Position:
 class ExchangeClient:
     """
     CCXT wrapper with automatic retry logic for network errors.
-    Supports Binance Testnet for paper trading.
+    
+    NOTE: Binance has deprecated testnet/sandbox for futures.
+    For paper trading, use DRY_RUN=true or get demo API keys from Binance.
+    When sandbox=true, we now use SPOT market instead of futures.
     """
     
     MAX_RETRIES = 3
@@ -37,26 +40,56 @@ class ExchangeClient:
     
     def __init__(self):
         """Initialize the exchange client."""
+        self.use_futures = self._should_use_futures()
         self.exchange = self._create_exchange()
         self._load_markets()
+    
+    def _should_use_futures(self) -> bool:
+        """
+        Determine if we can use futures market.
+        
+        Binance deprecated testnet for futures, so if sandbox mode is enabled,
+        we fall back to spot market to avoid errors.
+        """
+        if config.exchange.sandbox:
+            logger.warning(
+                "Sandbox mode enabled - using SPOT market instead of futures. "
+                "Binance deprecated testnet for futures. "
+                "For futures paper trading, use DRY_RUN=true with real API keys, "
+                "or get demo trading API keys from Binance."
+            )
+            return False
+        return True
     
     def _create_exchange(self) -> ccxt.Exchange:
         """Create and configure the CCXT exchange instance."""
         exchange_class = getattr(ccxt, config.exchange.exchange_id)
         
-        exchange = exchange_class({
+        market_type = 'future' if self.use_futures else 'spot'
+        
+        exchange_config = {
             'apiKey': config.exchange.api_key,
             'secret': config.exchange.secret,
-            'sandbox': config.exchange.sandbox,
             'enableRateLimit': True,
             'options': {
-                'defaultType': 'future',  # Use futures for both long/short
+                'defaultType': market_type,
             }
-        })
+        }
         
-        if config.exchange.sandbox:
+        # Only enable sandbox for spot (futures sandbox is deprecated)
+        if config.exchange.sandbox and not self.use_futures:
+            exchange_config['sandbox'] = True
+        
+        exchange = exchange_class(exchange_config)
+        
+        # Set sandbox mode only for spot
+        if config.exchange.sandbox and not self.use_futures:
             exchange.set_sandbox_mode(True)
-            logger.info("Exchange initialized in SANDBOX/TESTNET mode")
+            logger.info(f"Exchange initialized in SANDBOX mode (SPOT market)")
+        else:
+            mode = "FUTURES" if self.use_futures else "SPOT"
+            dry_run_status = "DRY_RUN enabled" if config.trading.dry_run else "LIVE TRADING"
+            logger.info(f"Exchange initialized: {mode} market, {dry_run_status}")
         
         return exchange
     
@@ -130,14 +163,28 @@ class ExchangeClient:
         return ticker['last']
     
     def get_balance(self, currency: str = 'USDT') -> float:
-        """Get available balance for a currency."""
+        """
+        Get available balance for a currency.
+        
+        In DRY_RUN mode with SIMULATED_BALANCE > 0, uses the PaperTradingManager
+        which tracks dynamic balance as trades are opened/closed.
+        """
+        # Use dynamic paper trading balance
+        if config.trading.dry_run and config.trading.simulated_balance > 0:
+            from src.paper_trading import get_paper_manager
+            return get_paper_manager().get_balance()
+        
         balance = self._retry_operation(
             lambda: self.exchange.fetch_balance()
         )
         return balance.get(currency, {}).get('free', 0.0)
     
     def get_position(self, symbol: str) -> Optional[Position]:
-        """Get current position for a symbol (futures)."""
+        """Get current position for a symbol (futures only)."""
+        # Spot market doesn't have position tracking
+        if not self.use_futures:
+            return None
+        
         try:
             positions = self._retry_operation(
                 lambda: self.exchange.fetch_positions([symbol])

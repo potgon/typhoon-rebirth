@@ -24,6 +24,7 @@ from src.watchman import Watchman, MarketRegime
 from src.strategies.base_strategy import BaseStrategy, Signal, PositionInfo, SignalType
 from src.strategies.mean_reversion import MeanReversionStrategy
 from src.strategies.trend_follower import TrendSniperStrategy
+from src.paper_trading import get_paper_manager
 
 
 class RegimeContextFilter(logging.Filter):
@@ -105,6 +106,12 @@ class TradingBot:
         # Initialize components
         self.exchange = ExchangeClient()
         self.watchman = Watchman()
+        
+        # Initialize paper trading manager (for DRY_RUN mode)
+        self.paper_manager = None
+        if config.trading.dry_run and config.trading.simulated_balance > 0:
+            self.paper_manager = get_paper_manager()
+            self.logger.info(f"Paper trading enabled with {self.paper_manager.get_balance():.2f} USDT")
         
         # Initialize strategies
         self.mean_reversion = MeanReversionStrategy()
@@ -190,12 +197,30 @@ class TradingBot:
             amount=position_size
         )
         
+        entry_price = order.get('price', signal.entry_price)
+        
+        # Open paper position (for balance tracking)
+        paper_position_id = None
+        if self.paper_manager:
+            paper_pos = self.paper_manager.open_position(
+                symbol=symbol,
+                side='long' if signal.signal_type == SignalType.LONG else 'short',
+                size=position_size,
+                entry_price=entry_price,
+                strategy=strategy.name
+            )
+            if paper_pos:
+                paper_position_id = paper_pos.id
+            else:
+                self.logger.warning("Could not open paper position (insufficient balance?)")
+                return
+        
         # Create trade record
         trade = create_trade(
             symbol=symbol,
             strategy=self._get_strategy_type(strategy),
             side=trade_side,
-            entry_price=order.get('price', signal.entry_price),
+            entry_price=entry_price,
             size=position_size
         )
         
@@ -204,14 +229,19 @@ class TradingBot:
             trade_id=trade.id,
             symbol=symbol,
             side=signal.signal_type.value,
-            entry_price=order.get('price', signal.entry_price),
+            entry_price=entry_price,
             size=position_size,
-            stop_loss=signal.stop_loss
+            stop_loss=signal.stop_loss,
+            paper_position_id=paper_position_id  # Track paper position ID
         )
+        
+        balance_info = ""
+        if self.paper_manager:
+            balance_info = f" | Balance: {self.paper_manager.get_balance():.2f} USDT"
         
         self.logger.info(
             f"POSITION OPENED | Trade ID: {trade.id} | Size: {position_size:.6f} | "
-            f"Entry: {signal.entry_price:.2f} | SL: {signal.stop_loss:.2f}"
+            f"Entry: {entry_price:.2f} | SL: {signal.stop_loss:.2f}{balance_info}"
         )
     
     def _handle_exit(self, strategy: BaseStrategy, reason: str):
@@ -234,16 +264,32 @@ class TradingBot:
         # Close position on exchange
         self.exchange.close_position(symbol, exchange_position)
         
+        # Close paper position (for balance tracking)
+        paper_pnl = None
+        if self.paper_manager and hasattr(position, 'paper_position_id') and position.paper_position_id:
+            paper_pnl = self.paper_manager.close_position(
+                position_id=position.paper_position_id,
+                exit_price=current_price
+            )
+        
         # Update trade record
         trade = close_trade(
             trade_id=position.trade_id,
             exit_price=current_price
         )
         
+        balance_info = ""
+        if self.paper_manager:
+            summary = self.paper_manager.get_account_summary()
+            balance_info = (
+                f" | Balance: {summary['current_equity']:.2f} USDT "
+                f"(Total PnL: {summary['total_pnl']:+.2f}, {summary['pnl_percent']:+.2f}%)"
+            )
+        
         self.logger.info(
             f"POSITION CLOSED | Trade ID: {position.trade_id} | Exit: {current_price:.2f} | "
             f"PnL: ${trade.pnl_absolute:.2f} ({trade.pnl_percent * 100:.2f}%) | "
-            f"Reason: {reason}"
+            f"Reason: {reason}{balance_info}"
         )
         
         # Remove from tracking

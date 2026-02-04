@@ -37,6 +37,7 @@ class PositionInfo:
     size: float
     stop_loss: float
     trailing_stop: Optional[float] = None
+    paper_position_id: Optional[int] = None  # For paper trading balance tracking
 
 
 class BaseStrategy(ABC):
