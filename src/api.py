@@ -15,14 +15,12 @@ from src.database import (
     get_session, 
     Trade, 
     get_open_trades, 
-    get_all_closed_trades, 
-    PaperAccount,
-    PaperPosition
+    get_all_closed_trades
 )
 from src.watchman import Watchman, MarketRegime
 from src.exchange_client import ExchangeClient
 from src.config import config
-from src.paper_trading import get_paper_manager
+from src.paper_trading import get_paper_manager, PaperAccount, PaperPosition
 
 app = FastAPI(title="Typhoon Rebirth Dashboard")
 
