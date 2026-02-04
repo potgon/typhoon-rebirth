@@ -47,6 +47,30 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trading-bot-dashboard
+    command: uvicorn src.api:app --host 0.0.0.0 --port 8000
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - DATABASE_PATH=/app/data/bot_data.db
+      - LOG_FILE=/app/data/dashboard.log
+    volumes:
+      - bot_data:/app/data
+    depends_on:
+      - trading-bot
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 # Named volume for persistent data
 volumes:
   bot_data:

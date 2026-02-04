@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Typhoon Bot Dashboard</title>
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --accent-blue: #3b82f6;
+            --accent-green: #22c55e;
+            --accent-red: #ef4444;
+            --border: #334155;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* Upgrade Header Styles */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        h1 { margin: 0; font-size: 1.5rem; font-weight: 700; }
+        .badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            background-color: var(--bg-card);
+            border: 1px solid var(--border);
+        }
+        .badge.pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+
+        /* Metrics Grid */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background-color: var(--bg-card);
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+
+        .card-title {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .card-value {
+            font-size: 1.875rem;
+            font-weight: 700;
+        }
+
+        .text-green { color: var(--accent-green); }
+        .text-red { color: var(--accent-red); }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.875rem;
+        }
+
+        th {
+            text-align: left;
+            padding: 1rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+            border-bottom: 1px solid var(--border);
+        }
+
+        td {
+            padding: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+        
+        tr:last-child td { border-bottom: none; }
+
+        .section-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            margin-top: 2rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div style="display: flex; align-items: center; gap: 1rem;">
+                <h1>🤖 Typhoon Bot</h1>
+                <span id="regime-badge" class="badge">Detecting...</span>
+            </div>
+            <div id="status-indicator" class="badge pulse" style="color: var(--accent-green);">● Online</div>
+        </header>
+
+        <!-- Stats Cards -->
+        <div class="grid">
+            <div class="card">
+                <div class="card-title">Total Equity</div>
+                <div class="card-value" id="equity">Loading...</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Available Balance</div>
+                <div class="card-value" id="balance">Loading...</div>
+            </div>
+            <div class="card">
+                <div class="card-title">Total PnL</div>
+                <div class="card-value" id="pnl">Loading...</div>
+            </div>
+        </div>
+
+        <!-- Active Positions -->
+        <h2 class="section-title">Active Positions</h2>
+        <div class="card" style="padding: 0; overflow: hidden;">
+            <table id="positions-table">
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Strategy</th>
+                        <th>Side</th>
+                        <th>Size</th>
+                        <th>Entry Price</th>
+                        <th>Unrealized PnL</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td colspan="6" style="text-align:center">Loading positions...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Recent Trades -->
+        <h2 class="section-title">Recent Trades History</h2>
+        <div class="card" style="padding: 0; overflow: hidden;">
+            <table id="trades-table">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Symbol</th>
+                        <th>Strategy</th>
+                        <th>Side</th>
+                        <th>Entry</th>
+                        <th>Exit</th>
+                        <th>PnL</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td colspan="7" style="text-align:center">Loading history...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // formatting helpers
+        const fmtMoney = (val) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
+        const fmtPct = (val) => new Intl.NumberFormat('en-US', { style: 'percent', minimumFractionDigits: 2 }).format(val);
+        const fmtDate = (iso) => new Date(iso).toLocaleString();
+
+        async function updateDashboard() {
+            try {
+                // 1. Fetch Status
+                const statusRes = await fetch('/api/status');
+                const status = await statusRes.json();
+                
+                document.getElementById('equity').textContent = fmtMoney(status.equity);
+                document.getElementById('balance').textContent = fmtMoney(status.balance);
+                
+                const pnl = status.equity - 10000; // Assuming 10k start if unknown, or calculate differently
+                // Better approach: Calculate PnL from equity - initial (need to fetch initial or assume)
+                // For now, let's just show Equity diff if we knew start, or just show Equity
+                
+                // Let's rely on api/trades for realized PnL calculation locally or update API to send PnL
+                // For v1 simply display equity/balance
+                document.getElementById('pnl').textContent = "---"; 
+
+                document.getElementById('regime-badge').textContent = status.regime;
+                
+                // 2. Fetch Positions
+                const posRes = await fetch('/api/positions');
+                const positions = await posRes.json();
+                
+                const posTbody = document.querySelector('#positions-table tbody');
+                posTbody.innerHTML = positions.length === 0 
+                    ? '<tr><td colspan="6" style="text-align:center; padding: 2rem; color: var(--text-secondary)">No active positions</td></tr>'
+                    : positions.map(p => `
+                        <tr>
+                            <td>${p.symbol}</td>
+                            <td><span class="badge" style="background: rgba(59, 130, 246, 0.1); color: var(--accent-blue)">${p.strategy}</span></td>
+                            <td style="color: ${p.side === 'long' ? 'var(--accent-green)' : 'var(--accent-red)'}">${p.side.toUpperCase()}</td>
+                            <td>${p.size}</td>
+                            <td>${fmtMoney(p.entry_price)}</td>
+                            <td>---</td>
+                        </tr>
+                    `).join('');
+
+                // 3. Fetch Trades
+                const tradesRes = await fetch('/api/trades');
+                const trades = await tradesRes.json();
+                
+                const tradesTbody = document.querySelector('#trades-table tbody');
+                tradesTbody.innerHTML = trades.length === 0
+                    ? '<tr><td colspan="7" style="text-align:center; padding: 2rem; color: var(--text-secondary)">No active trades recorded yet</td></tr>'
+                    : trades.map(t => {
+                        const pnlColor = t.pnl_absolute >= 0 ? 'text-green' : 'text-red';
+                        return `
+                        <tr>
+                            <td>${fmtDate(t.exit_time || t.entry_time)}</td>
+                            <td>${t.symbol}</td>
+                            <td>${t.strategy_used}</td>
+                            <td style="color: ${t.side === 'LONG' ? 'var(--accent-green)' : 'var(--accent-red)'}">${t.side}</td>
+                            <td>${fmtMoney(t.entry_price)}</td>
+                            <td>${t.exit_price ? fmtMoney(t.exit_price) : '-'}</td>
+                            <td class="${pnlColor}">
+                                ${t.pnl_absolute ? fmtMoney(t.pnl_absolute) : '-'} 
+                                <span style="font-size:0.8em; opacity:0.8">(${t.pnl_percent ? fmtPct(t.pnl_percent) : '-'})</span>
+                            </td>
+                        </tr>
+                    `}).join('');
+
+            } catch (err) {
+                console.error("Dashboard update failed:", err);
+                document.getElementById('status-indicator').style.color = 'var(--accent-red)';
+                document.getElementById('status-indicator').textContent = '● Disconnected';
+            }
+        }
+
+        // Init
+        updateDashboard();
+        setInterval(updateDashboard, 5000);
+    </script>
+</body>
+</html>
