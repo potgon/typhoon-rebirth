@@ -55,9 +55,13 @@ class MeanReversionStrategy(BaseStrategy):
             length=self.cfg.bb_period,
             std=self.cfg.bb_std_dev
         )
-        df['bb_lower'] = bbands[f'BBL_{self.cfg.bb_period}_{self.cfg.bb_std_dev}']
-        df['bb_middle'] = bbands[f'BBM_{self.cfg.bb_period}_{self.cfg.bb_std_dev}']
-        df['bb_upper'] = bbands[f'BBU_{self.cfg.bb_period}_{self.cfg.bb_std_dev}']
+        # Dynamically find column names (pandas_ta formats std_dev inconsistently)
+        bbl_col = [c for c in bbands.columns if c.startswith('BBL_')][0]
+        bbm_col = [c for c in bbands.columns if c.startswith('BBM_')][0]
+        bbu_col = [c for c in bbands.columns if c.startswith('BBU_')][0]
+        df['bb_lower'] = bbands[bbl_col]
+        df['bb_middle'] = bbands[bbm_col]
+        df['bb_upper'] = bbands[bbu_col]
         
         # RSI
         df['rsi'] = ta.rsi(df['close'], length=self.cfg.rsi_period)
